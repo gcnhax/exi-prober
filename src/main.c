@@ -12,6 +12,10 @@ static GXRModeObj *rmode = NULL;
 #define ESC_BG_SAD "\x1b[41;1m\x1b[37;1m"
 #define ESC_RST "\x1b[39m\x1b[40m"
 
+#define WRITESIZE
+
+static u8 dma_buf[64] __attribute__((aligned(32)));
+
 //---------------------------------------------------------------------------------
 int main(int argc, char **argv) {
 //---------------------------------------------------------------------------------
@@ -58,6 +62,7 @@ int main(int argc, char **argv) {
 
 	printf("exi-prober!\n");
 
+#ifdef PROBE_CHANNELS
 	for (size_t chan = 0; chan < 3; chan++) {
 		printf("scanning channel %d:", chan);
 		printf("  probing channel... ");
@@ -76,6 +81,87 @@ int main(int argc, char **argv) {
 			}
 		}
 	}
+#endif
+
+#ifdef GET_IPL_ADDRS
+	printf("grabbing addrs from IPL\n");
+	while (EXI_ProbeEx(0) == 0) ;
+	for (int i = 0; i<16; i++) {
+		EXI_Lock(/*chan*/ 0, /*dev*/ 1, /*unlock cb*/ NULL);
+		EXI_Select(0, 1, EXI_SPEED1MHZ);
+		u32 cmd = i << 6;
+		EXI_Imm(0, &cmd, 4, EXI_WRITE, NULL);
+		EXI_Sync(0);
+		u32 data;
+		EXI_Imm(0, &data, 4, EXI_READ, NULL);
+		EXI_Sync(0);
+		EXI_Deselect(0);
+		EXI_Unlock(0);
+
+		printf("%04x | %#x\n", i, data);
+	}
+#endif
+
+#ifdef WRITESIZE
+	printf("test: write 0, but with different sizes.\n");
+
+	printf("4 byte write, 4 byte read returns: ");
+	while (EXI_ProbeEx(0) == 0) ;
+
+	{
+		EXI_Lock(/*chan*/ 0, /*dev*/ 1, /*unlock cb*/ NULL);
+		EXI_Select(0, 1, EXI_SPEED1MHZ);
+		u32 cmd = 0;
+		EXI_Imm(0, &cmd, 4, EXI_WRITE, NULL);
+		EXI_Sync(0);
+		u32 data;
+		EXI_Imm(0, &data, 4, EXI_READ, NULL);
+		EXI_Sync(0);
+		EXI_Deselect(0);
+		EXI_Unlock(0);
+
+		printf("%#x\n", data);
+	}
+
+	printf("2 byte write, 4 byte read returns: ");
+	{
+		EXI_Lock(/*chan*/ 0, /*dev*/ 1, /*unlock cb*/ NULL);
+		EXI_Select(0, 1, EXI_SPEED1MHZ);
+		u32 cmd = 0;
+		EXI_Imm(0, &cmd, 2, EXI_WRITE, NULL);
+		EXI_Sync(0);
+		u32 data;
+		EXI_Imm(0, &data, 4, EXI_READ, NULL);
+		EXI_Sync(0);
+		EXI_Deselect(0);
+		EXI_Unlock(0);
+
+		printf("%#x\n", data);
+	}
+
+#endif
+
+#ifdef IPL_DMA
+	printf("test: dma to IPL region\n");
+	u32 offset = 0;
+	
+	while (EXI_ProbeEx(0) == 0) ;
+
+	EXI_Lock(/*chan*/ 0, /*dev*/ 1, /*unlock cb*/ NULL);
+	EXI_Select(0, 1, EXI_SPEED8MHZ);
+	u32 cmd = (offset << 6);
+	EXI_Imm(0, &cmd, 4, EXI_WRITE, NULL);
+	EXI_Sync(0);
+	EXI_Dma(0, &dma_buf, 64, EXI_READ, NULL);
+	EXI_Sync(0);
+	EXI_Deselect(0);
+	EXI_Unlock(0);
+
+	for (int i = 0; i<16; i++) {
+		printf("%04x | %#x\n", i, dma_buf[i]);
+	}
+
+#endif
 
 	printf("\n\ndone! :3c\n");
 
